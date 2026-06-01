@@ -11,7 +11,10 @@ import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, order
 
 export default function App() {
   // --- STATE MANAJEMEN ---
-  const [currentUser, setCurrentUser] = useState(null); 
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('collabra_user');
+    return saved ? JSON.parse(saved) : null;
+  }); 
   const [activeCategory, setActiveCategory] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -110,6 +113,7 @@ export default function App() {
 
       try {
         await setDoc(doc(db, 'users', newUserId), newUser);
+        localStorage.setItem('collabra_user', JSON.stringify(newUser));
         setCurrentUser(newUser);
         showToast('Pendaftaran berhasil! Selamat datang.');
         setAuthForm({ name: '', username: '', password: '' });
@@ -121,6 +125,7 @@ export default function App() {
       
       const user = users.find(u => u.username === cleanUsername && u.password === password);
       if (user) {
+        localStorage.setItem('collabra_user', JSON.stringify(user));
         setCurrentUser(user);
         showToast(`Selamat datang kembali, ${user.name.split(' ')[0]}!`);
         setAuthForm({ name: '', username: '', password: '' });
@@ -278,7 +283,7 @@ export default function App() {
             <h1 className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 tracking-tight">
               Collabra
             </h1>
-            <p className="text-gray-500 text-sm mt-2 text-center font-medium">Platform Kolaborasi Tim Terpadu (Cloud Edition)</p>
+            <p className="text-gray-500 text-sm mt-2 text-center font-medium">Platform Kolaborasi Tim Terpadu</p>
           </div>
 
           <form onSubmit={handleAuthSubmit} className="space-y-4">
@@ -445,7 +450,7 @@ export default function App() {
                 <p className="text-sm font-bold text-gray-800 truncate">{currentUser.name}</p>
                 <p className="text-xs text-emerald-500 font-medium">Sedang Aktif</p>
               </div>
-              <button onClick={() => setCurrentUser(null)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Keluar">
+              <button onClick={() => { localStorage.removeItem('collabra_user'); setCurrentUser(null); }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Keluar">
                 <LogOut size={18} />
               </button>
             </div>
