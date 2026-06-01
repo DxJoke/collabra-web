@@ -3,11 +3,13 @@ import {
   Search, Plus, CheckCircle2, Circle, 
   Bell, Briefcase, PlusCircle, Trash2, 
   LogOut, Users, UserPlus, X, ShieldAlert,
-  Menu, Edit2, Save, Rocket, Lock, User, AtSign, Eye, EyeOff
+  Menu, Edit2, Save, Rocket, Lock, User, AtSign, Eye, EyeOff,
+  UploadCloud, Image as ImageIcon, BarChart3, ListTodo, FileText
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { db } from './firebase';
+import { db, storage } from './firebase';
 import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
 export default function App() {
   // --- STATE MANAJEMEN ---
@@ -78,7 +80,15 @@ export default function App() {
     };
   }, []);
 
-  const [newTask, setNewTask] = useState({ title: '', category: 'Kuliah', members: [], subtasks: [{ id: Date.now().toString(), title: '' }] });
+  const categories = ['Semua', 'Kuliah', 'Organisasi', 'Pribadi'];
+  const [newTask, setNewTask] = useState({ title: '', description: '', category: 'Kuliah', members: [], subtasks: [{ id: Date.now().toString(), title: '' }] });
+  
+  // States untuk Fitur Lanjutan (Modal & Foto)
+  const [activeTaskTab, setActiveTaskTab] = useState('rincian'); // 'rincian' | 'statistik'
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(null); // id subtask yang sedang upload
+  const [showPhotoModal, setShowPhotoModal] = useState(null); // url gambar
+  const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [editedDesc, setEditedDesc] = useState('');
 
   // Helpers
   const getUserById = (id) => users.find(u => u.id === id);
@@ -253,6 +263,58 @@ export default function App() {
     } catch(err) { showToast('Gagal merubah nama', 'error') }
   };
 
+  const saveTaskDescription = async (taskId) => {
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { description: editedDesc });
+      setIsEditingDesc(false);
+      showToast('Deskripsi berhasil diperbarui!');
+    } catch(err) { showToast('Gagal memperbarui deskripsi', 'error') }
+  };
+
+  const [newDynamicSubtask, setNewDynamicSubtask] = useState('');
+  const [isAddingDynamicSubtask, setIsAddingDynamicSubtask] = useState(false);
+
+  const handleAddSubtaskToExisting = async (taskId) => {
+    if (!newDynamicSubtask.trim()) return;
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const newSubtaskObj = { id: Date.now().toString(), title: newDynamicSubtask, assignees: [], isCompleted: false };
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { subtasks: [...task.subtasks, newSubtaskObj] });
+      setNewDynamicSubtask('');
+      setIsAddingDynamicSubtask(false);
+      showToast('Pekerjaan baru berhasil ditambahkan!');
+    } catch(err) { showToast('Gagal menambah pekerjaan', 'error') }
+  };
+
+  const handleUploadProof = async (taskId, subtaskId, file) => {
+    if (!file) return;
+    setIsUploadingPhoto(subtaskId);
+    try {
+      const storageRef = ref(storage, `proofs/${taskId}_${subtaskId}_${Date.now()}_${file.name}`);
+      const uploadTask = uploadBytesResumable(storageRef, file);
+      
+      uploadTask.on('state_changed', 
+        () => {}, 
+        (error) => {
+          showToast('Gagal mengunggah foto!', 'error');
+          setIsUploadingPhoto(null);
+        }, 
+        async () => {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          const task = tasks.find(t => t.id === taskId);
+          const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, proofImage: downloadURL } : st);
+          await updateDoc(doc(db, 'tasks', taskId), { subtasks: newSubtasks });
+          setIsUploadingPhoto(null);
+          showToast('Foto bukti berhasil diunggah!');
+        }
+      );
+    } catch(err) {
+      showToast('Gagal mengunggah foto!', 'error');
+      setIsUploadingPhoto(null);
+    }
+  };
+
   // Create Form Handlers
   const handleAddSubtaskInput = () => setNewTask({ ...newTask, subtasks: [...newTask.subtasks, { id: Date.now().toString(), title: '' }] });
   const handleSubtaskInputChange = (id, value) => setNewTask({ ...newTask, subtasks: newTask.subtasks.map(st => st.id === id ? { ...st, title: value } : st) });
@@ -271,6 +333,7 @@ export default function App() {
     const finalTask = {
       id: newDocRef.id,
       title: newTask.title,
+      description: newTask.description,
       category: newTask.category,
       coverColor: randomColor,
       creatorId: currentUser.id, 
@@ -282,7 +345,7 @@ export default function App() {
     try {
       await setDoc(newDocRef, finalTask);
       setShowCreateModal(false);
-      setNewTask({ title: '', category: 'Kuliah', members: [], subtasks: [{ id: Date.now().toString(), title: '' }] });
+      setNewTask({ title: '', description: '', category: 'Kuliah', members: [], subtasks: [{ id: Date.now().toString(), title: '' }] });
       showToast('Tugas baru berhasil dibuat & tersimpan di Cloud!');
     } catch(err) {
       showToast('Gagal menyimpan tugas ke Cloud.', 'error');
@@ -744,152 +807,266 @@ export default function App() {
                 <div className="absolute top-0 right-0 w-40 h-40 bg-white opacity-10 rounded-full blur-3xl transform translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
               </div>
               
+              {/* Tab Navigasi */}
+              <div className="flex bg-gray-50/80 border-b border-gray-200">
+                <button onClick={() => setActiveTaskTab('rincian')} className={`flex-1 py-3.5 text-sm font-bold border-b-2 transition-colors flex items-center justify-center gap-2 ${activeTaskTab === 'rincian' ? 'border-indigo-500 text-indigo-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}><ListTodo size={16}/> Rincian Tugas</button>
+                <button onClick={() => setActiveTaskTab('statistik')} className={`flex-1 py-3.5 text-sm font-bold border-b-2 transition-colors flex items-center justify-center gap-2 ${activeTaskTab === 'statistik' ? 'border-indigo-500 text-indigo-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'}`}><BarChart3 size={16}/> Statistik & Kontribusi</button>
+              </div>
+              
               {/* Konten Modal */}
-              <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-gray-50">
-                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                  <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-                    <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                      <Briefcase size={18} className="text-indigo-500"/>
-                      Tabel Rincian Pembagian Tugas
-                    </h3>
-                  </div>
-                  
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[600px]">
-                      <thead>
-                        <tr className="bg-white border-b border-gray-200">
-                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-12 text-center">No</th>
-                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Deskripsi Pekerjaan (Sub-tugas)</th>
-                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider min-w-[150px]">Tim Ditugaskan</th>
-                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center w-24">Status</th>
-                          <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right w-40">Aksi</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {activeTaskDetail.subtasks?.map((st, idx) => {
-                          const isAssignedToMe = st.assignees && st.assignees.includes(currentUser.id);
-                          const canToggle = isAssignedToMe || isTaskCreator; 
+              <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 bg-gray-50">
+                {activeTaskTab === 'rincian' ? (
+                  <div className="space-y-6">
+                    {/* Deskripsi Section */}
+                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
+                      <div className="flex justify-between items-center mb-3">
+                        <h3 className="font-bold text-gray-800 flex items-center gap-2"><FileText size={18} className="text-indigo-500"/> Deskripsi & Instruksi</h3>
+                        {isTaskCreator && !isEditingDesc && (
+                          <button onClick={() => { setIsEditingDesc(true); setEditedDesc(activeTaskDetail.description || ''); }} className="text-xs px-3 py-1.5 rounded-lg bg-gray-50 text-indigo-500 hover:bg-indigo-50 hover:text-indigo-700 font-bold transition-colors">Edit Deskripsi</button>
+                        )}
+                      </div>
+                      {isEditingDesc ? (
+                        <div className="space-y-3">
+                          <textarea 
+                            value={editedDesc} 
+                            onChange={(e) => setEditedDesc(e.target.value)} 
+                            className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-all shadow-sm resize-none custom-scrollbar" 
+                            rows={4} 
+                            placeholder="Tuliskan detail instruksi di sini..."
+                          />
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => setIsEditingDesc(false)} className="px-4 py-2 text-xs bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-600 font-bold transition-colors">Batal</button>
+                            <button onClick={() => saveTaskDescription(activeTaskDetail.id)} className="px-4 py-2 text-xs bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-bold transition-colors shadow-sm shadow-indigo-500/30">Simpan Deskripsi</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed">{activeTaskDetail.description || <span className="italic text-gray-400 font-medium">Belum ada catatan detail dari ketua kelompok.</span>}</p>
+                      )}
+                    </div>
 
-                          return (
-                            <tr key={st.id} className={`hover:bg-gray-50/50 transition-colors ${st.isCompleted ? 'bg-gray-50/30' : 'bg-white'}`}>
-                              <td className="px-4 py-4 text-sm text-gray-400 font-medium text-center">{idx + 1}</td>
-                              <td className="px-4 py-4">
-                                <p className={`text-sm font-semibold ${st.isCompleted ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                                  {st.title}
-                                </p>
-                              </td>
-                              <td className="px-4 py-4">
-                                {st.assignees && st.assignees.length > 0 ? (
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {st.assignees.map(uId => {
-                                      const u = getUserById(uId);
-                                      return u ? (
-                                        <div key={uId} className={`flex items-center gap-1.5 px-2 py-1 rounded-full border border-gray-200 bg-white shadow-sm group/avatar relative`} title={u.name}>
-                                          <div className={`w-4 h-4 rounded-full ${u.color} flex items-center justify-center text-[8px] text-white font-bold`}>
-                                            {getInitials(u.name)}
-                                          </div>
-                                          <span className="text-xs font-medium text-gray-700 hidden sm:inline">{u.name.split(' ')[0]}</span>
-                                          {(isTaskCreator || uId === currentUser.id) && !st.isCompleted && (
-                                              <button 
-                                                onClick={(e) => { e.stopPropagation(); removeAssignee(activeTaskDetail.id, st.id, uId); }}
-                                                className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity z-10 shadow-sm"
-                                                title="Hapus penugasan"
-                                              >
-                                                <X size={10}/>
-                                              </button>
-                                          )}
-                                        </div>
-                                      ) : null;
-                                    })}
-                                  </div>
-                                ) : (
-                                  <span className="text-xs font-medium text-indigo-500 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
-                                    Belum ditugaskan
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-4 text-center">
-                                {st.isCompleted ? (
-                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                                    <CheckCircle2 size={12}/> Selesai
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full border border-gray-200">
-                                    <Circle size={12}/> Proses
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-4 text-right">
-                                <div className="flex items-center justify-end gap-2">
-                                  {/* Tombol Selesai */}
-                                  <button 
-                                    onClick={() => canToggle && toggleSubtaskStatus(activeTaskDetail.id, st.id)}
-                                    disabled={!canToggle}
-                                    className={`p-1.5 rounded-lg border transition-all ${st.isCompleted ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : (canToggle ? 'bg-white text-gray-400 hover:text-emerald-500 hover:border-emerald-200 shadow-sm' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed')}`}
-                                    title={st.isCompleted ? "Batal Selesai" : "Tandai Selesai"}
-                                  >
-                                    <CheckCircle2 size={18} />
-                                  </button>
-                                  
-                                  {/* Tombol Ikut Kerjakan */}
-                                  {!isAssignedToMe && !st.isCompleted && (
-                                    <button 
-                                      onClick={() => assignSubtask(activeTaskDetail.id, st.id, currentUser.id)}
-                                      className="text-[10px] uppercase tracking-wider bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold transition-colors shadow-sm"
-                                    >
-                                      Ikut
-                                    </button>
-                                  )}
+                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                      <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                        <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                          <Briefcase size={18} className="text-indigo-500"/>
+                          Daftar Pekerjaan & Status
+                        </h3>
+                      </div>
+                      
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[650px]">
+                          <thead>
+                            <tr className="bg-white border-b border-gray-200">
+                              <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-12 text-center">No</th>
+                              <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Deskripsi Pekerjaan</th>
+                              <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider min-w-[150px]">Tim Ditugaskan</th>
+                              <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center w-24">Status</th>
+                              <th className="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right w-44">Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {activeTaskDetail.subtasks?.map((st, idx) => {
+                              const isAssignedToMe = st.assignees && st.assignees.includes(currentUser.id);
+                              const canToggle = isAssignedToMe || isTaskCreator; 
 
-                                  {/* Tombol Delegasi (Ketua) */}
-                                  {isTaskCreator && !st.isCompleted && (
-                                    <div className="relative">
+                              return (
+                                <tr key={st.id} className={`hover:bg-gray-50/50 transition-colors ${st.isCompleted ? 'bg-gray-50/30' : 'bg-white'}`}>
+                                  <td className="px-4 py-4 text-sm text-gray-400 font-medium text-center">{idx + 1}</td>
+                                  <td className="px-4 py-4">
+                                    <p className={`text-sm font-semibold ${st.isCompleted ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                                      {st.title}
+                                    </p>
+                                  </td>
+                                  <td className="px-4 py-4">
+                                    {st.assignees && st.assignees.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {st.assignees.map(uId => {
+                                          const u = getUserById(uId);
+                                          return u ? (
+                                            <div key={uId} className={`flex items-center gap-1.5 px-2 py-1 rounded-full border border-gray-200 bg-white shadow-sm group/avatar relative`} title={u.name}>
+                                              <div className={`w-4 h-4 rounded-full ${u.color} flex items-center justify-center text-[8px] text-white font-bold`}>
+                                                {getInitials(u.name)}
+                                              </div>
+                                              <span className="text-xs font-medium text-gray-700 hidden sm:inline">{u.name.split(' ')[0]}</span>
+                                              {(isTaskCreator || uId === currentUser.id) && !st.isCompleted && (
+                                                  <button 
+                                                    onClick={(e) => { e.stopPropagation(); removeAssignee(activeTaskDetail.id, st.id, uId); }}
+                                                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity z-10 shadow-sm"
+                                                    title="Hapus penugasan"
+                                                  >
+                                                    <X size={10}/>
+                                                  </button>
+                                              )}
+                                            </div>
+                                          ) : null;
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <span className="text-xs font-medium text-indigo-500 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                                        Belum ditugaskan
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-4 text-center">
+                                    {st.isCompleted ? (
+                                      <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+                                        <CheckCircle2 size={12}/> Selesai
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full border border-gray-200">
+                                        <Circle size={12}/> Proses
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-4 text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      {/* Tombol Upload Bukti Foto (jika selesai) */}
+                                      {st.isCompleted && (
+                                        st.proofImage ? (
+                                          <button onClick={(e) => { e.stopPropagation(); setShowPhotoModal(st.proofImage); }} className="p-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition-colors shadow-sm" title="Lihat Bukti Foto">
+                                            <ImageIcon size={18}/>
+                                          </button>
+                                        ) : (
+                                          <label className="cursor-pointer p-1.5 rounded-lg bg-white border border-gray-200 text-gray-400 hover:text-indigo-500 hover:border-indigo-200 transition-all shadow-sm" title="Unggah Bukti Foto (Opsional)">
+                                            {isUploadingPhoto === st.id ? (
+                                              <div className="w-[18px] h-[18px] border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                                            ) : (
+                                              <UploadCloud size={18}/>
+                                            )}
+                                            <input type="file" accept="image/*" className="hidden" onChange={(e) => handleUploadProof(activeTaskDetail.id, st.id, e.target.files[0])}/>
+                                          </label>
+                                        )
+                                      )}
+
+                                      {/* Tombol Tandai Selesai */}
                                       <button 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setAssignDropdownActive(assignDropdownActive === st.id ? null : st.id);
-                                        }}
-                                        className="p-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-indigo-500 transition-colors shadow-sm"
-                                        title="Delegasikan"
+                                        onClick={() => canToggle && toggleSubtaskStatus(activeTaskDetail.id, st.id)}
+                                        disabled={!canToggle}
+                                        className={`p-1.5 rounded-lg border transition-all ${st.isCompleted ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : (canToggle ? 'bg-white text-gray-400 hover:text-emerald-500 hover:border-emerald-200 shadow-sm' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed')}`}
+                                        title={st.isCompleted ? "Batal Selesai" : "Tandai Selesai"}
                                       >
-                                        <UserPlus size={18} />
+                                        <CheckCircle2 size={18} />
                                       </button>
+                                      
+                                      {/* Tombol Ikut Kerjakan */}
+                                      {!isAssignedToMe && !st.isCompleted && (
+                                        <button 
+                                          onClick={() => assignSubtask(activeTaskDetail.id, st.id, currentUser.id)}
+                                          className="text-[10px] uppercase tracking-wider bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold transition-colors shadow-sm"
+                                        >
+                                          Ikut
+                                        </button>
+                                      )}
 
-                                      {/* Dropdown Menu Pilih Anggota */}
-                                      {assignDropdownActive === st.id && (
-                                        <div className="absolute right-0 bottom-full mb-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1 overflow-hidden text-left" onClick={(e) => e.stopPropagation()}>
-                                          <p className="text-[9px] font-bold text-gray-400 px-3 py-1.5 uppercase border-b border-gray-50 mb-1">Tugaskan Ke:</p>
-                                          {eligibleAssignees.filter(uId => !st.assignees || !st.assignees.includes(uId)).map(uId => {
-                                            const u = getUserById(uId);
-                                            return u ? (
-                                              <button
-                                                key={u.id}
-                                                onClick={() => assignSubtask(activeTaskDetail.id, st.id, u.id)}
-                                                className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors"
-                                              >
-                                                <div className={`w-5 h-5 rounded-full ${u.color} flex items-center justify-center text-[8px] text-white font-bold`}>
-                                                  {getInitials(u.name)}
-                                                </div>
-                                                {u.name}
-                                              </button>
-                                            ) : null;
-                                          })}
-                                          {eligibleAssignees.filter(uId => !st.assignees || !st.assignees.includes(uId)).length === 0 && (
-                                            <p className="text-xs text-gray-400 px-3 py-3 text-center">Semua anggota sudah ditugaskan</p>
+                                      {/* Tombol Delegasi (Ketua) */}
+                                      {isTaskCreator && !st.isCompleted && (
+                                        <div className="relative">
+                                          <button 
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setAssignDropdownActive(assignDropdownActive === st.id ? null : st.id);
+                                            }}
+                                            className="p-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-indigo-500 transition-colors shadow-sm"
+                                            title="Delegasikan"
+                                          >
+                                            <UserPlus size={18} />
+                                          </button>
+
+                                          {/* Dropdown Menu Pilih Anggota */}
+                                          {assignDropdownActive === st.id && (
+                                            <div className="absolute right-0 bottom-full mb-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1 overflow-hidden text-left" onClick={(e) => e.stopPropagation()}>
+                                              <p className="text-[9px] font-bold text-gray-400 px-3 py-1.5 uppercase border-b border-gray-50 mb-1">Tugaskan Ke:</p>
+                                              {eligibleAssignees.filter(uId => !st.assignees || !st.assignees.includes(uId)).map(uId => {
+                                                const u = getUserById(uId);
+                                                return u ? (
+                                                  <button
+                                                    key={u.id}
+                                                    onClick={() => assignSubtask(activeTaskDetail.id, st.id, u.id)}
+                                                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2 transition-colors"
+                                                  >
+                                                    <div className={`w-5 h-5 rounded-full ${u.color} flex items-center justify-center text-[8px] text-white font-bold`}>
+                                                      {getInitials(u.name)}
+                                                    </div>
+                                                    {u.name}
+                                                  </button>
+                                                ) : null;
+                                              })}
+                                              {eligibleAssignees.filter(uId => !st.assignees || !st.assignees.includes(uId)).length === 0 && (
+                                                <p className="text-xs text-gray-400 px-3 py-3 text-center">Semua anggota sudah ditugaskan</p>
+                                              )}
+                                            </div>
                                           )}
                                         </div>
                                       )}
                                     </div>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      
+                      {/* Form Tambah Sub-tugas (Hanya Ketua) */}
+                      {isTaskCreator && (
+                        <div className="p-4 bg-gray-50/50 border-t border-gray-100 flex gap-2">
+                          <input 
+                            type="text" 
+                            placeholder="Tambah pekerjaan baru yang tertinggal..." 
+                            value={newDynamicSubtask}
+                            onChange={(e) => setNewDynamicSubtask(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleAddSubtaskToExisting(activeTaskDetail.id)}
+                            className="flex-1 text-sm border border-gray-200 rounded-xl px-4 py-2.5 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all shadow-sm"
+                          />
+                          <button 
+                            onClick={() => handleAddSubtaskToExisting(activeTaskDetail.id)}
+                            disabled={!newDynamicSubtask.trim()}
+                            className="bg-indigo-500 hover:bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50 transition-colors shadow-sm shadow-indigo-500/30"
+                          >
+                            Tambah
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden p-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2 mb-6">
+                      <BarChart3 size={18} className="text-indigo-500"/>
+                      Statistik & Penilaian Kontribusi
+                    </h3>
+                    
+                    <div className="space-y-5">
+                      {eligibleAssignees.map(uId => {
+                        const u = getUserById(uId);
+                        if (!u) return null;
+                        const totalAssigned = activeTaskDetail.subtasks.filter(st => st.assignees && st.assignees.includes(uId)).length;
+                        const totalCompleted = activeTaskDetail.subtasks.filter(st => st.isCompleted && st.assignees && st.assignees.includes(uId)).length;
+                        const userProgress = totalAssigned === 0 ? 0 : Math.round((totalCompleted / totalAssigned) * 100);
+                        
+                        return (
+                          <div key={uId} className="flex items-center gap-5 p-4 rounded-2xl bg-gray-50 border border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition-colors">
+                            <div className={`w-12 h-12 rounded-full ${u.color} flex items-center justify-center text-lg text-white font-bold shrink-0 shadow-sm ring-4 ring-white`}>{getInitials(u.name)}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-end mb-2">
+                                <div>
+                                  <p className="font-bold text-gray-800 text-base truncate">{u.name}</p>
+                                  <p className="text-xs text-gray-500 font-medium mt-0.5">Berhasil menyelesaikan <span className="font-bold text-gray-700">{totalCompleted}</span> dari <span className="font-bold text-gray-700">{totalAssigned}</span> tugas</p>
+                                </div>
+                                <span className={`text-lg font-black ${userProgress === 100 ? 'text-emerald-500' : 'text-indigo-600'}`}>{userProgress}%</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                <div className={`h-2.5 rounded-full transition-all duration-1000 ${userProgress === 100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`} style={{ width: `${userProgress}%` }}></div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {eligibleAssignees.length === 0 && (
+                        <p className="text-center text-sm text-gray-500 py-8">Belum ada anggota di dalam tugas ini.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -921,6 +1098,17 @@ export default function App() {
                     onChange={(e) => setNewTask({...newTask, title: e.target.value})}
                     placeholder="Contoh: Pembuatan Website E-Commerce" 
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-all shadow-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Deskripsi Detail <span className="text-xs font-normal text-gray-400">(Opsional)</span></label>
+                  <textarea 
+                    value={newTask.description}
+                    onChange={(e) => setNewTask({...newTask, description: e.target.value})}
+                    placeholder="Tuliskan instruksi atau catatan penting terkait tugas ini..." 
+                    rows={3}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 outline-none transition-all shadow-sm resize-none custom-scrollbar"
                   />
                 </div>
 
@@ -1026,6 +1214,19 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LIHAT FOTO BUKTI */}
+      {showPhotoModal && (
+        <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setShowPhotoModal(null)}>
+          <div className="relative max-w-4xl w-full flex flex-col items-center animate-in fade-in zoom-in duration-200" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setShowPhotoModal(null)} className="absolute -top-12 right-0 w-10 h-10 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/40 text-white transition-colors">
+              <X size={20}/>
+            </button>
+            <img src={showPhotoModal} alt="Bukti Pengerjaan" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain border border-white/10" />
+            <p className="text-white/70 text-sm mt-4 font-medium flex items-center gap-2"><ImageIcon size={16}/> Bukti Pengerjaan Tugas</p>
           </div>
         </div>
       )}
