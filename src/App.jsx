@@ -121,13 +121,21 @@ export default function App() {
       const newUser = { id: newUserId, name: name.trim(), username: cleanUsername, password, color: randomColor };
 
       try {
-        await setDoc(doc(db, 'users', newUserId), newUser);
+        const setDocPromise = setDoc(doc(db, 'users', newUserId), newUser);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 8000));
+        
+        await Promise.race([setDocPromise, timeoutPromise]);
+        
         localStorage.setItem('collabra_user', JSON.stringify(newUser));
         setCurrentUser(newUser);
         showToast('Pendaftaran berhasil! Selamat datang.');
         setAuthForm({ name: '', username: '', password: '' });
       } catch (err) {
-        setAuthError('Gagal menyimpan. Pastikan Firestore rules Anda mengizinkan write.');
+        if (err.message === 'TIMEOUT') {
+          setAuthError('Gagal terhubung ke server (Timeout). Cek koneksi internet Anda atau matikan ekstensi AdBlock.');
+        } else {
+          setAuthError('Gagal menyimpan. Pastikan Firestore rules Anda mengizinkan write.');
+        }
       } finally {
         setIsSubmitting(false);
       }
