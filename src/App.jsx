@@ -942,23 +942,35 @@ export default function App() {
                 <div className="pt-2">
                   <label className="block text-sm font-semibold text-gray-700 mb-2">Pilih Anggota Kelompok <span className="text-xs font-normal text-gray-400">(Opsional)</span></label>
                   <div className="flex flex-wrap gap-2">
-                    {users.filter(u => u.id !== currentUser.id).map(u => (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => toggleNewTaskMember(u.id)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${newTask.members.includes(u.id) ? 'bg-indigo-100 border-indigo-400 text-indigo-700 shadow-sm' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
-                      >
-                        <div className={`w-4 h-4 rounded-full ${u.color} flex items-center justify-center text-[8px] text-white font-bold`}>
-                          {getInitials(u.name)}
-                        </div>
-                        {u.name}
-                      </button>
-                    ))}
+                    {users.filter(u => u.id !== currentUser.id).length === 0 ? (
+                      <div className="w-full bg-indigo-50 border border-indigo-100 p-3 rounded-xl flex items-start gap-3">
+                        <Users size={16} className="text-indigo-500 shrink-0 mt-0.5" />
+                        <p className="text-xs text-indigo-700 leading-relaxed">
+                          <strong>Belum ada teman yang bisa dipilih!</strong><br/>
+                          Saat ini hanya Anda yang baru mendaftar di database Cloud. Bagikan link website ini ke teman kelompok Anda dan minta mereka mendaftar agar nama mereka muncul di sini.
+                        </p>
+                      </div>
+                    ) : (
+                      users.filter(u => u.id !== currentUser.id).map(u => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => toggleNewTaskMember(u.id)}
+                          className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all ${newTask.members.includes(u.id) ? 'bg-indigo-100 border-indigo-400 text-indigo-700 shadow-sm' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                        >
+                          <div className={`w-4 h-4 rounded-full ${u.color} flex items-center justify-center text-[8px] text-white font-bold`}>
+                            {getInitials(u.name)}
+                          </div>
+                          {u.name}
+                        </button>
+                      ))
+                    )}
                   </div>
-                  <p className="text-[10px] text-gray-400 mt-2 flex items-center gap-1">
-                    <ShieldAlert size={12}/> Hanya Anda dan anggota terpilih yang bisa melihat & mengerjakan tugas ini.
-                  </p>
+                  {users.filter(u => u.id !== currentUser.id).length > 0 && (
+                    <p className="text-[10px] text-gray-400 mt-2 flex items-center gap-1">
+                      <ShieldAlert size={12}/> Hanya Anda dan anggota terpilih yang bisa melihat & mengerjakan tugas ini.
+                    </p>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-gray-100">
