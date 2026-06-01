@@ -42,6 +42,7 @@ export default function App() {
   const [authForm, setAuthForm] = useState({ name: '', username: '', password: '' });
   const [authError, setAuthError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Effects: Firebase Real-Time Listeners
   useEffect(() => {
@@ -96,14 +97,22 @@ export default function App() {
   // --- AUTH ACTIONS (Firebase) ---
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setAuthError('');
+    setIsSubmitting(true);
 
     const { name, username, password } = authForm;
     const cleanUsername = username.trim().toLowerCase();
 
     if (authMode === 'register') {
-      if (!name || !username || !password) return setAuthError('Semua kolom harus diisi.');
-      if (users.find(u => u.username === cleanUsername)) return setAuthError('Username sudah digunakan.');
+      if (!name || !username || !password) {
+        setIsSubmitting(false);
+        return setAuthError('Semua kolom harus diisi.');
+      }
+      if (users.find(u => u.username === cleanUsername)) {
+        setIsSubmitting(false);
+        return setAuthError('Username sudah digunakan.');
+      }
 
       const colors = ['bg-blue-500', 'bg-pink-500', 'bg-emerald-500', 'bg-purple-500', 'bg-orange-500', 'bg-indigo-500', 'bg-teal-500'];
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
@@ -119,9 +128,14 @@ export default function App() {
         setAuthForm({ name: '', username: '', password: '' });
       } catch (err) {
         setAuthError('Gagal menyimpan. Pastikan Firestore rules Anda mengizinkan write.');
+      } finally {
+        setIsSubmitting(false);
       }
     } else {
-      if (!username || !password) return setAuthError('Username dan Password harus diisi.');
+      if (!username || !password) {
+        setIsSubmitting(false);
+        return setAuthError('Username dan Password harus diisi.');
+      }
       
       const user = users.find(u => u.username === cleanUsername && u.password === password);
       if (user) {
@@ -132,6 +146,7 @@ export default function App() {
       } else {
         setAuthError('Username atau Password salah.');
       }
+      setIsSubmitting(false);
     }
   };
 
@@ -346,9 +361,10 @@ export default function App() {
 
             <button 
               type="submit"
-              className="w-full mt-2 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 transition-all hover:-translate-y-0.5"
+              disabled={isSubmitting}
+              className={`w-full mt-2 py-3 rounded-xl font-bold text-white transition-all shadow-lg ${isSubmitting ? 'bg-gray-400 cursor-not-allowed shadow-none' : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 shadow-indigo-500/30 hover:-translate-y-0.5'}`}
             >
-              {authMode === 'login' ? 'Masuk' : 'Daftar Sekarang'}
+              {isSubmitting ? 'Memproses...' : (authMode === 'login' ? 'Masuk' : 'Daftar Sekarang')}
             </button>
           </form>
 
