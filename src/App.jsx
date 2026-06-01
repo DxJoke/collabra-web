@@ -6,42 +6,8 @@ import {
   Menu, Edit2, Save, Rocket, Lock, User, AtSign, Eye, EyeOff
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-
-// --- DATABASE BAWAAN ---
-const DEFAULT_USERS = [
-  { id: 'u1', name: 'Andi Pratama', username: 'andipratama', password: 'password123', color: 'bg-blue-500' },
-  { id: 'u2', name: 'Siti Aminah', username: 'sitiaminah', password: 'password123', color: 'bg-pink-500' },
-  { id: 'u3', name: 'Budi Santoso', username: 'budisantoso', password: 'password123', color: 'bg-emerald-500' },
-  { id: 'u4', name: 'Rina Kusuma', username: 'rinakusuma', password: 'password123', color: 'bg-purple-500' },
-];
-
-const DEFAULT_TASKS = [
-  {
-    id: 1,
-    title: 'Project Akhir Pemrograman Web',
-    category: 'Kuliah',
-    coverColor: 'from-blue-500 to-cyan-400',
-    creatorId: 'u1', 
-    members: ['u2', 'u3'],
-    subtasks: [
-      { id: 11, title: 'Membuat Mockup UI/UX', assignees: ['u2'], isCompleted: true },
-      { id: 12, title: 'Setup React & Tailwind', assignees: ['u3', 'u1'], isCompleted: false }, 
-      { id: 13, title: 'Integrasi Database', assignees: [], isCompleted: false },
-    ]
-  },
-  {
-    id: 2,
-    title: 'Laporan Kepanitiaan Event',
-    category: 'Organisasi',
-    coverColor: 'from-orange-500 to-yellow-400',
-    creatorId: 'u2', 
-    members: ['u1', 'u4'],
-    subtasks: [
-      { id: 21, title: 'Bab Pendahuluan', assignees: ['u1'], isCompleted: true },
-      { id: 22, title: 'Rincian Anggaran', assignees: ['u2', 'u4'], isCompleted: false },
-    ]
-  }
-];
+import { db } from './firebase';
+import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
 
 export default function App() {
   // --- STATE MANAJEMEN ---
@@ -63,18 +29,10 @@ export default function App() {
   // Toast Notification State
   const [toast, setToast] = useState({ visible: false, message: '', type: 'success' });
 
-  // Data State (dengan LocalStorage)
-  const [users, setUsers] = useState(() => {
-    const saved = localStorage.getItem('collabra_users');
-    if (saved) return JSON.parse(saved);
-    return DEFAULT_USERS;
-  });
-
-  const [tasks, setTasks] = useState(() => {
-    const saved = localStorage.getItem('collabra_tasks');
-    if (saved) return JSON.parse(saved);
-    return DEFAULT_TASKS;
-  });
+  // Data State (Real-Time dari Firebase)
+  const [users, setUsers] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Auth States
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
@@ -82,20 +40,45 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Effects
+  // Effects: Firebase Real-Time Listeners
   useEffect(() => {
-    localStorage.setItem('collabra_users', JSON.stringify(users));
-  }, [users]);
+    // Listener untuk koleksi 'users'
+    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const usersData = snapshot.docs.map(doc => ({ ...doc.data() }));
+      setUsers(usersData);
+    }, (error) => {
+      console.error("Error fetching users: ", error);
+      setAuthError('Gagal terhubung ke database. Pastikan Rules Firestore adalah test mode.');
+    });
 
-  useEffect(() => {
-    localStorage.setItem('collabra_tasks', JSON.stringify(tasks));
-  }, [tasks]);
+    // Listener untuk koleksi 'tasks' (diurutkan berdasarkan waktu pembuatan terbaru)
+    const q = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
+    const unsubscribeTasks = onSnapshot(q, (snapshot) => {
+      const tasksData = snapshot.docs.map(doc => ({ ...doc.data() }));
+      setTasks(tasksData);
+      setIsLoading(false);
+    }, (error) => {
+      console.error("Error fetching tasks: ", error);
+      // Fallback jika belum bikin index orderBy di firestore
+      const fallbackQuery = onSnapshot(collection(db, 'tasks'), (snap) => {
+         const tData = snap.docs.map(d => ({...d.data()})).sort((a,b) => b.createdAt - a.createdAt);
+         setTasks(tData);
+         setIsLoading(false);
+      });
+      return () => fallbackQuery();
+    });
 
-  const [newTask, setNewTask] = useState({ title: '', category: 'Kuliah', members: [], subtasks: [{ id: Date.now(), title: '' }] });
+    return () => {
+      unsubscribeUsers();
+      unsubscribeTasks();
+    };
+  }, []);
+
+  const [newTask, setNewTask] = useState({ title: '', category: 'Kuliah', members: [], subtasks: [{ id: Date.now().toString(), title: '' }] });
 
   // Helpers
   const getUserById = (id) => users.find(u => u.id === id);
-  const getInitials = (name) => name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : '?';
   const calculateProgress = (subtasks) => {
     if (!subtasks || subtasks.length === 0) return 0;
     const completed = subtasks.filter(st => st.isCompleted).length;
@@ -107,8 +90,8 @@ export default function App() {
     setTimeout(() => setToast(prev => ({ ...prev, visible: false })), 3000);
   };
 
-  // --- AUTH ACTIONS ---
-  const handleAuthSubmit = (e) => {
+  // --- AUTH ACTIONS (Firebase) ---
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError('');
 
@@ -116,35 +99,26 @@ export default function App() {
     const cleanUsername = username.trim().toLowerCase();
 
     if (authMode === 'register') {
-      if (!name || !username || !password) {
-        setAuthError('Semua kolom harus diisi.');
-        return;
-      }
-      if (users.find(u => u.username === cleanUsername)) {
-        setAuthError('Username sudah digunakan.');
-        return;
-      }
+      if (!name || !username || !password) return setAuthError('Semua kolom harus diisi.');
+      if (users.find(u => u.username === cleanUsername)) return setAuthError('Username sudah digunakan.');
 
       const colors = ['bg-blue-500', 'bg-pink-500', 'bg-emerald-500', 'bg-purple-500', 'bg-orange-500', 'bg-indigo-500', 'bg-teal-500'];
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
-      const newUser = {
-        id: `u${Date.now()}`,
-        name: name.trim(),
-        username: cleanUsername,
-        password: password,
-        color: randomColor
-      };
-
-      setUsers([...users, newUser]);
-      setCurrentUser(newUser);
-      showToast('Pendaftaran berhasil! Selamat datang.');
-      setAuthForm({ name: '', username: '', password: '' });
       
-    } else {
-      if (!username || !password) {
-        setAuthError('Username dan Password harus diisi.');
-        return;
+      const newUserId = `u${Date.now()}`;
+      const newUser = { id: newUserId, name: name.trim(), username: cleanUsername, password, color: randomColor };
+
+      try {
+        await setDoc(doc(db, 'users', newUserId), newUser);
+        setCurrentUser(newUser);
+        showToast('Pendaftaran berhasil! Selamat datang.');
+        setAuthForm({ name: '', username: '', password: '' });
+      } catch (err) {
+        setAuthError('Gagal menyimpan. Pastikan Firestore rules Anda mengizinkan write.');
       }
+    } else {
+      if (!username || !password) return setAuthError('Username dan Password harus diisi.');
+      
       const user = users.find(u => u.username === cleanUsername && u.password === password);
       if (user) {
         setCurrentUser(user);
@@ -163,115 +137,128 @@ export default function App() {
     setShowPassword(false);
   };
 
-  // --- TASK ACTIONS ---
-  const addMemberToTask = (taskId, userId) => {
-    setTasks(tasks.map(t => t.id === taskId ? { ...t, members: [...t.members, userId] } : t));
-    setInviteDropdownActive(null);
-    showToast(`${getUserById(userId).name} ditambahkan ke grup.`);
+  // --- TASK ACTIONS (Firebase) ---
+  const addMemberToTask = async (taskId, userId) => {
+    const task = tasks.find(t => t.id === taskId);
+    if(!task) return;
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { members: [...task.members, userId] });
+      setInviteDropdownActive(null);
+      showToast(`${getUserById(userId)?.name || 'Anggota'} ditambahkan ke grup.`);
+    } catch(err) { showToast('Gagal menambahkan anggota', 'error') }
   };
 
-  const removeMemberFromTask = (taskId, userId) => {
-    setTasks(tasks.map(t => {
-      if (t.id === taskId) {
-        return { 
-          ...t, 
-          members: t.members.filter(id => id !== userId),
-          subtasks: t.subtasks.map(st => ({ ...st, assignees: st.assignees.filter(id => id !== userId) }))
-        };
+  const removeMemberFromTask = async (taskId, userId) => {
+    const task = tasks.find(t => t.id === taskId);
+    if(!task) return;
+    try {
+      const newMembers = task.members.filter(id => id !== userId);
+      const newSubtasks = task.subtasks.map(st => ({ ...st, assignees: st.assignees.filter(id => id !== userId) }));
+      await updateDoc(doc(db, 'tasks', taskId), { members: newMembers, subtasks: newSubtasks });
+      showToast('Anggota dikeluarkan dari grup.', 'error');
+    } catch(err) { showToast('Gagal mengeluarkan anggota', 'error') }
+  };
+
+  const assignSubtask = async (taskId, subtaskId, userIdToAssign) => {
+    const task = tasks.find(t => t.id === taskId);
+    if(!task) return;
+    
+    const newSubtasks = task.subtasks.map(st => {
+      if (st.id === subtaskId && !st.assignees.includes(userIdToAssign)) {
+        return { ...st, assignees: [...st.assignees, userIdToAssign] };
       }
-      return t;
-    }));
-    showToast('Anggota dikeluarkan dari grup.', 'error');
+      return st;
+    });
+
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { subtasks: newSubtasks });
+      setAssignDropdownActive(null);
+    } catch(err) { showToast('Gagal mendelegasikan tugas', 'error') }
   };
 
-  const assignSubtask = (taskId, subtaskId, userIdToAssign) => {
-    setTasks(tasks.map(task => {
-      if (task.id === taskId) {
-        return {
-          ...task,
-          subtasks: task.subtasks.map(st => {
-            if (st.id === subtaskId && !st.assignees.includes(userIdToAssign)) {
-              return { ...st, assignees: [...st.assignees, userIdToAssign] };
-            }
-            return st;
-          })
-        };
-      }
-      return task;
-    }));
-    setAssignDropdownActive(null); 
+  const removeAssignee = async (taskId, subtaskId, userIdToRemove) => {
+    const task = tasks.find(t => t.id === taskId);
+    if(!task) return;
+
+    const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, assignees: st.assignees.filter(id => id !== userIdToRemove) } : st);
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { subtasks: newSubtasks });
+    } catch(err) { showToast('Gagal menghapus delegasi', 'error') }
   };
 
-  const removeAssignee = (taskId, subtaskId, userIdToRemove) => {
-    setTasks(tasks.map(task => {
-      if (task.id === taskId) return { ...task, subtasks: task.subtasks.map(st => st.id === subtaskId ? { ...st, assignees: st.assignees.filter(id => id !== userIdToRemove) } : st) };
-      return task;
-    }));
+  const toggleSubtaskStatus = async (taskId, subtaskId) => {
+    const task = tasks.find(t => t.id === taskId);
+    if(!task) return;
+
+    const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, isCompleted: !st.isCompleted } : st);
+    
+    // Cek apakah baru saja mencapai 100%
+    const wasCompleted = task.subtasks.filter(st => st.isCompleted).length === task.subtasks.length;
+    const nowCompleted = newSubtasks.filter(st => st.isCompleted).length === newSubtasks.length;
+    
+    if (!wasCompleted && nowCompleted) {
+      confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#6366f1', '#a855f7', '#ec4899', '#22c55e'] });
+      showToast('Luar biasa! Tugas selesai 100% 🎉');
+    }
+
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { subtasks: newSubtasks });
+    } catch(err) { showToast('Gagal memperbarui status', 'error') }
   };
 
-  const toggleSubtaskStatus = (taskId, subtaskId) => {
-    setTasks(tasks.map(task => {
-      if (task.id === taskId) {
-        const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, isCompleted: !st.isCompleted } : st);
-        
-        // Cek apakah baru saja mencapai 100%
-        const wasCompleted = task.subtasks.filter(st => st.isCompleted).length === task.subtasks.length;
-        const nowCompleted = newSubtasks.filter(st => st.isCompleted).length === newSubtasks.length;
-        
-        if (!wasCompleted && nowCompleted) {
-          confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#6366f1', '#a855f7', '#ec4899', '#22c55e'] });
-          showToast('Luar biasa! Tugas selesai 100% 🎉');
-        }
-
-        return { ...task, subtasks: newSubtasks };
-      }
-      return task;
-    }));
-  };
-
-  const deleteTask = (taskId) => {
-    if (window.confirm('PERINGATAN: Yakin ingin menghapus seluruh tugas ini beserta isinya?')) {
-      setTasks(tasks.filter(t => t.id !== taskId));
-      setSelectedTaskId(null);
-      showToast('Tugas berhasil dihapus.', 'error');
+  const deleteTask = async (taskId) => {
+    if (window.confirm('PERINGATAN: Yakin ingin menghapus seluruh tugas ini beserta isinya secara permanen dari Cloud?')) {
+      try {
+        await deleteDoc(doc(db, 'tasks', taskId));
+        setSelectedTaskId(null);
+        showToast('Tugas berhasil dihapus.', 'error');
+      } catch(err) { showToast('Gagal menghapus tugas', 'error') }
     }
   };
 
-  const saveTaskTitle = (taskId) => {
+  const saveTaskTitle = async (taskId) => {
     if (!editingTaskTitle.trim()) return;
-    setTasks(tasks.map(t => t.id === taskId ? { ...t, title: editingTaskTitle } : t));
-    setEditingTaskId(null);
-    showToast('Nama tugas berhasil diubah.');
+    try {
+      await updateDoc(doc(db, 'tasks', taskId), { title: editingTaskTitle });
+      setEditingTaskId(null);
+      showToast('Nama tugas berhasil diubah.');
+    } catch(err) { showToast('Gagal merubah nama', 'error') }
   };
 
   // Create Form Handlers
-  const handleAddSubtaskInput = () => setNewTask({ ...newTask, subtasks: [...newTask.subtasks, { id: Date.now(), title: '' }] });
+  const handleAddSubtaskInput = () => setNewTask({ ...newTask, subtasks: [...newTask.subtasks, { id: Date.now().toString(), title: '' }] });
   const handleSubtaskInputChange = (id, value) => setNewTask({ ...newTask, subtasks: newTask.subtasks.map(st => st.id === id ? { ...st, title: value } : st) });
   const handleRemoveSubtaskInput = (id) => setNewTask({ ...newTask, subtasks: newTask.subtasks.filter(st => st.id !== id) });
   const toggleNewTaskMember = (userId) => setNewTask(prev => ({ ...prev, members: prev.members.includes(userId) ? prev.members.filter(id => id !== userId) : [...prev.members, userId] }));
 
-  const handleCreateTask = (e) => {
+  const handleCreateTask = async (e) => {
     e.preventDefault();
     if (!newTask.title) return;
     
-    const validSubtasks = newTask.subtasks.filter(st => st.title.trim() !== '').map((st, index) => ({ id: Date.now() + index, title: st.title, assignees: [], isCompleted: false }));
+    const validSubtasks = newTask.subtasks.filter(st => st.title.trim() !== '').map((st, index) => ({ id: (Date.now() + index).toString(), title: st.title, assignees: [], isCompleted: false }));
     const colors = ['from-purple-500 to-pink-500', 'from-emerald-400 to-teal-500', 'from-red-500 to-orange-500', 'from-blue-500 to-indigo-500', 'from-fuchsia-500 to-purple-600'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
 
+    const newDocRef = doc(collection(db, 'tasks'));
     const finalTask = {
-      id: Date.now(),
+      id: newDocRef.id,
       title: newTask.title,
       category: newTask.category,
       coverColor: randomColor,
       creatorId: currentUser.id, 
       members: newTask.members,
-      subtasks: validSubtasks
+      subtasks: validSubtasks,
+      createdAt: Date.now()
     };
 
-    setTasks([finalTask, ...tasks]);
-    setShowCreateModal(false);
-    setNewTask({ title: '', category: 'Kuliah', members: [], subtasks: [{ id: Date.now(), title: '' }] });
-    showToast('Tugas baru berhasil dibuat!');
+    try {
+      await setDoc(newDocRef, finalTask);
+      setShowCreateModal(false);
+      setNewTask({ title: '', category: 'Kuliah', members: [], subtasks: [{ id: Date.now().toString(), title: '' }] });
+      showToast('Tugas baru berhasil dibuat & tersimpan di Cloud!');
+    } catch(err) {
+      showToast('Gagal menyimpan tugas ke Cloud.', 'error');
+    }
   };
 
 
@@ -291,7 +278,7 @@ export default function App() {
             <h1 className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 tracking-tight">
               Collabra
             </h1>
-            <p className="text-gray-500 text-sm mt-2 text-center font-medium">Platform Kolaborasi Tim Terpadu</p>
+            <p className="text-gray-500 text-sm mt-2 text-center font-medium">Platform Kolaborasi Tim Terpadu (Cloud Edition)</p>
           </div>
 
           <form onSubmit={handleAuthSubmit} className="space-y-4">
@@ -371,31 +358,28 @@ export default function App() {
               </button>
             </p>
           </div>
-          
-          {authMode === 'login' && (
-            <div className="mt-6 pt-4 border-t border-gray-100">
-              <p className="text-xs text-center text-gray-400">Default Demo: <strong className="text-gray-500">andipratama</strong> | pass: <strong className="text-gray-500">password123</strong></p>
-            </div>
-          )}
-
         </div>
         <style dangerouslySetInnerHTML={{__html: `@keyframes blob { 0% { transform: translate(0px, 0px) scale(1); } 33% { transform: translate(30px, -50px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.9); } 100% { transform: translate(0px, 0px) scale(1); } } .animate-blob { animation: blob 7s infinite; } .animation-delay-2000 { animation-delay: 2s; } .animation-delay-4000 { animation-delay: 4s; }`}} />
       </div>
     );
   }
 
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50 text-indigo-500 font-bold animate-pulse">Menghubungkan ke Cloud...</div>;
+  }
+
   // Filter & Pengurutan Tugas (100% di bawah)
   const filteredTasks = tasks.filter(task => {
     const matchSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
     const matchCategory = activeCategory === 'Semua' || task.category === activeCategory;
-    const isAuthorized = task.creatorId === currentUser.id || task.members.includes(currentUser.id);
+    const isAuthorized = task.creatorId === currentUser.id || (task.members && task.members.includes(currentUser.id));
     return matchSearch && matchCategory && isAuthorized;
   }).sort((a, b) => {
     const pA = calculateProgress(a.subtasks);
     const pB = calculateProgress(b.subtasks);
     if (pA === 100 && pB !== 100) return 1;
     if (pB === 100 && pA !== 100) return -1;
-    return 0; // Tetap pada urutan pembuatan
+    return 0; 
   });
 
   return (
@@ -482,7 +466,12 @@ export default function App() {
             <span className="text-xl font-extrabold text-indigo-600 sm:hidden">Collabra</span>
           </div>
 
-          <div className="hidden md:flex flex-1"></div>
+          <div className="hidden md:flex flex-1 items-center gap-2">
+            <span className="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full border border-gray-200 flex items-center gap-2">
+              <ShieldAlert size={14} className="text-emerald-500"/>
+              Database Cloud Aktif: {tasks.length} Tugas Sinkron
+            </span>
+          </div>
 
           <div className="flex items-center gap-4 ml-auto">
             <button className="text-gray-400 hover:text-indigo-500 transition-colors relative">
@@ -549,7 +538,7 @@ export default function App() {
                                 <div className={`w-6 h-6 rounded-full border border-white/50 flex items-center justify-center text-[9px] font-bold ${creator?.color || 'bg-gray-500'} shadow-sm z-10`} title={`${creator?.name || 'Unknown'} (Ketua)`}>
                                   {getInitials(creator?.name || '??')}
                                 </div>
-                                {task.members.map(memberId => {
+                                {task.members?.map(memberId => {
                                   const m = getUserById(memberId);
                                   return m ? (
                                     <div key={memberId} className={`relative group/member w-6 h-6 rounded-full border border-white/50 flex items-center justify-center text-[9px] font-bold ${m.color} shadow-sm`}>
@@ -580,7 +569,7 @@ export default function App() {
                                {inviteDropdownActive === task.id && (
                                   <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1 overflow-hidden" onClick={(e) => e.stopPropagation()}>
                                     <p className="text-[9px] font-bold text-gray-400 px-3 py-1 uppercase border-b border-gray-50 mb-1">Tambah ke Grup:</p>
-                                    {users.filter(u => u.id !== currentUser.id && !task.members.includes(u.id)).map(u => (
+                                    {users.filter(u => u.id !== currentUser.id && (!task.members || !task.members.includes(u.id))).map(u => (
                                       <button
                                         key={u.id}
                                         onClick={() => addMemberToTask(task.id, u.id)}
@@ -592,7 +581,7 @@ export default function App() {
                                         {u.name}
                                       </button>
                                     ))}
-                                    {users.filter(u => u.id !== currentUser.id && !task.members.includes(u.id)).length === 0 && (
+                                    {users.filter(u => u.id !== currentUser.id && (!task.members || !task.members.includes(u.id))).length === 0 && (
                                       <p className="text-xs text-gray-400 px-3 py-2 text-center italic">Semua user sudah di grup</p>
                                     )}
                                   </div>
@@ -614,18 +603,17 @@ export default function App() {
                       </div>
 
                       <div className="flex-1 flex flex-col relative opacity-60 pointer-events-none">
-                         {/* Preview List Sub-tugas disederhanakan/dimatikan di card, difokuskan ke Modal */}
                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                           <Users size={14}/> Preview Sub-Tugas (Klik Tabel Detail)
                         </p>
                         <div className="space-y-2">
-                          {task.subtasks.slice(0, 3).map(st => (
+                          {task.subtasks?.slice(0, 3).map(st => (
                             <div key={st.id} className="flex items-center gap-2 text-sm text-gray-500 truncate">
                               {st.isCompleted ? <CheckCircle2 size={14} className="text-emerald-500 shrink-0"/> : <Circle size={14} className="shrink-0"/>}
                               <span className="truncate">{st.title}</span>
                             </div>
                           ))}
-                          {task.subtasks.length > 3 && <p className="text-xs text-gray-400 italic mt-1">+{task.subtasks.length - 3} sub-tugas lainnya...</p>}
+                          {task.subtasks && task.subtasks.length > 3 && <p className="text-xs text-gray-400 italic mt-1">+{task.subtasks.length - 3} sub-tugas lainnya...</p>}
                         </div>
                       </div>
                         
@@ -661,7 +649,7 @@ export default function App() {
         const activeTaskDetail = tasks.find(t => t.id === selectedTaskId);
         const progress = calculateProgress(activeTaskDetail.subtasks);
         const isTaskCreator = activeTaskDetail.creatorId === currentUser.id;
-        const eligibleAssignees = [activeTaskDetail.creatorId, ...activeTaskDetail.members];
+        const eligibleAssignees = [activeTaskDetail.creatorId, ...(activeTaskDetail.members || [])];
         const is100 = progress === 100;
 
         return (
@@ -749,8 +737,8 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {activeTaskDetail.subtasks.map((st, idx) => {
-                          const isAssignedToMe = st.assignees.includes(currentUser.id);
+                        {activeTaskDetail.subtasks?.map((st, idx) => {
+                          const isAssignedToMe = st.assignees && st.assignees.includes(currentUser.id);
                           const canToggle = isAssignedToMe || isTaskCreator; 
 
                           return (
@@ -762,7 +750,7 @@ export default function App() {
                                 </p>
                               </td>
                               <td className="px-4 py-4">
-                                {st.assignees.length > 0 ? (
+                                {st.assignees && st.assignees.length > 0 ? (
                                   <div className="flex flex-wrap gap-1.5">
                                     {st.assignees.map(uId => {
                                       const u = getUserById(uId);
@@ -842,7 +830,7 @@ export default function App() {
                                       {assignDropdownActive === st.id && (
                                         <div className="absolute right-0 bottom-full mb-2 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1 overflow-hidden text-left" onClick={(e) => e.stopPropagation()}>
                                           <p className="text-[9px] font-bold text-gray-400 px-3 py-1.5 uppercase border-b border-gray-50 mb-1">Tugaskan Ke:</p>
-                                          {eligibleAssignees.filter(uId => !st.assignees.includes(uId)).map(uId => {
+                                          {eligibleAssignees.filter(uId => !st.assignees || !st.assignees.includes(uId)).map(uId => {
                                             const u = getUserById(uId);
                                             return u ? (
                                               <button
@@ -857,7 +845,7 @@ export default function App() {
                                               </button>
                                             ) : null;
                                           })}
-                                          {eligibleAssignees.filter(uId => !st.assignees.includes(uId)).length === 0 && (
+                                          {eligibleAssignees.filter(uId => !st.assignees || !st.assignees.includes(uId)).length === 0 && (
                                             <p className="text-xs text-gray-400 px-3 py-3 text-center">Semua anggota sudah ditugaskan</p>
                                           )}
                                         </div>
