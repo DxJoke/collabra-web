@@ -363,13 +363,13 @@ export default function App() {
         
         <div className="w-full max-w-md bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-100 p-8 z-10 transition-all">
           <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-indigo-600 to-purple-500 flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/30 mb-4 transform -rotate-3 hover:rotate-0 transition-transform">
-              <Rocket size={32} />
+            <div className="w-24 h-24 rounded-[2rem] bg-white shadow-2xl shadow-cyan-500/30 mb-5 p-2.5 flex items-center justify-center transform hover:scale-110 transition-transform duration-500 hover:rotate-12">
+              <img src="/logo.png" alt="Collabra Logo" className="w-full h-full object-contain animate-pulse" />
             </div>
-            <h1 className="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 tracking-tight">
+            <h1 className="text-5xl font-black bg-clip-text text-transparent bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 tracking-tighter mb-2 animate-pulse hover:tracking-widest transition-all duration-700">
               Collabra
             </h1>
-            <p className="text-gray-500 text-sm mt-2 text-center font-medium">Platform Kolaborasi Tim Terpadu</p>
+            <p className="text-gray-500 text-sm mt-1 text-center font-bold tracking-wide uppercase">Platform Kolaborasi Tim Terpadu</p>
           </div>
 
           <form onSubmit={handleAuthSubmit} className="space-y-4">
@@ -486,11 +486,11 @@ export default function App() {
       <aside className={`fixed inset-y-0 left-0 bg-white border-r border-gray-200 z-40 transform transition-transform duration-300 md:relative md:translate-x-0 w-64 flex flex-col ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 flex flex-col h-full">
           <div className="flex items-center justify-between mb-8 shrink-0">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-500 flex items-center justify-center text-white font-bold shadow-md transform -rotate-3">
-                <Rocket size={18} />
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-white flex items-center justify-center shadow-lg shadow-cyan-500/20 p-1.5 transform hover:rotate-[360deg] transition-transform duration-700">
+                <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
               </div>
-              <span className="text-2xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 tracking-tight">
+              <span className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-cyan-600 to-indigo-600 tracking-tighter animate-pulse">
                 Collabra
               </span>
             </div>
@@ -552,10 +552,10 @@ export default function App() {
             <button onClick={() => setMobileMenuOpen(true)} className="p-2 -ml-2 text-gray-600 hover:text-indigo-500 transition-colors">
               <Menu size={24} />
             </button>
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white hidden sm:flex transform -rotate-3">
-              <Rocket size={18} />
+            <div className="w-9 h-9 rounded-xl bg-white shadow-md shadow-cyan-500/20 flex items-center justify-center hidden sm:flex p-1 animate-pulse">
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" />
             </div>
-            <span className="text-xl font-extrabold text-indigo-600 sm:hidden">Collabra</span>
+            <span className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-cyan-600 to-indigo-600 sm:hidden">Collabra</span>
           </div>
 
           <div className="hidden md:flex flex-1 items-center gap-2">
