@@ -227,6 +227,11 @@ export default function App() {
   const toggleSubtaskStatus = async (taskId, subtaskId) => {
     const task = tasks.find(t => t.id === taskId);
     if(!task) return;
+    
+    const subtask = task.subtasks.find(st => st.id === subtaskId);
+    if (!subtask.isCompleted && !subtask.proofImage) {
+      return showToast('Wajib mengunggah foto bukti terlebih dahulu!', 'error');
+    }
 
     const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, isCompleted: !st.isCompleted } : st);
     
@@ -558,12 +563,7 @@ export default function App() {
             <span className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-cyan-600 to-indigo-600 sm:hidden">Collabra</span>
           </div>
 
-          <div className="hidden md:flex flex-1 items-center gap-2">
-            <span className="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full border border-gray-200 flex items-center gap-2">
-              <ShieldAlert size={14} className="text-emerald-500"/>
-              Database Cloud Aktif: {tasks.length} Tugas Sinkron
-            </span>
-          </div>
+
 
           <div className="flex items-center gap-4 ml-auto">
             <button className="text-gray-400 hover:text-indigo-500 transition-colors relative">
@@ -919,18 +919,24 @@ export default function App() {
                                   </td>
                                   <td className="px-4 py-4 text-right">
                                     <div className="flex items-center justify-end gap-2">
-                                      {/* Tombol Upload Bukti Foto (jika selesai) */}
-                                      {st.isCompleted && (
+                                      {/* Tombol Upload Bukti Foto */}
+                                      {canToggle && (
                                         st.proofImage ? (
                                           <button onClick={(e) => { e.stopPropagation(); setShowPhotoModal(st.proofImage); }} className="p-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition-colors shadow-sm" title="Lihat Bukti Foto">
                                             <ImageIcon size={18}/>
                                           </button>
                                         ) : (
-                                          <label className="cursor-pointer p-1.5 rounded-lg bg-white border border-gray-200 text-gray-400 hover:text-indigo-500 hover:border-indigo-200 transition-all shadow-sm" title="Unggah Bukti Foto (Opsional)">
+                                          <label className="cursor-pointer p-1.5 rounded-lg bg-white border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-all shadow-sm relative group/upload" title="Wajib Unggah Bukti Foto">
                                             {isUploadingPhoto === st.id ? (
-                                              <div className="w-[18px] h-[18px] border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                                              <div className="w-[18px] h-[18px] border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
                                             ) : (
-                                              <UploadCloud size={18}/>
+                                              <>
+                                                <UploadCloud size={18}/>
+                                                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                                </span>
+                                              </>
                                             )}
                                             <input type="file" accept="image/*" className="hidden" onChange={(e) => handleUploadProof(activeTaskDetail.id, st.id, e.target.files[0])}/>
                                           </label>
