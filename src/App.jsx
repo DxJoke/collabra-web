@@ -1242,8 +1242,19 @@ export default function App() {
             <button onClick={() => setShowPhotoModal(null)} className="absolute -top-12 right-0 w-10 h-10 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/40 text-white transition-colors">
               <X size={20}/>
             </button>
-            <img src={showPhotoModal} alt="Bukti Pengerjaan" className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain border border-white/10" />
+            <img 
+              src={showPhotoModal} 
+              alt="Bukti Pengerjaan" 
+              className="max-w-full max-h-[75vh] rounded-xl shadow-2xl object-contain border border-white/10 bg-gray-900/50" 
+              onError={(e) => {
+                e.target.onerror = null; 
+                e.target.src = "https://placehold.co/600x400/1e293b/ef4444?text=Gambar+Rusak+atau+Diblokir";
+              }}
+            />
             <p className="text-white/70 text-sm mt-4 font-medium flex items-center gap-2"><ImageIcon size={16}/> Bukti Pengerjaan Tugas</p>
+            <a href={showPhotoModal} target="_blank" rel="noreferrer" className="text-white/40 text-xs mt-2 underline hover:text-white transition-colors text-center break-all max-w-full px-4">
+              Buka gambar di tab baru: {showPhotoModal}
+            </a>
           </div>
         </div>
       )}
