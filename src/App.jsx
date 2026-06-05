@@ -713,7 +713,7 @@ export default function App() {
                                </button>
                                
                                {inviteDropdownActive === task.id && (
-                                  <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                                  <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1 max-h-60 overflow-y-auto custom-scrollbar" onClick={(e) => e.stopPropagation()}>
                                     <p className="text-[9px] font-bold text-gray-400 px-3 py-1 uppercase border-b border-gray-50 mb-1">Tambah ke Grup:</p>
                                     {users.filter(u => u.id !== currentUser.id && (!task.members || !task.members.includes(u.id))).map(u => (
                                       <button
@@ -1015,14 +1015,24 @@ export default function App() {
                                         <CheckCircle2 size={18} />
                                       </button>
                                       
-                                      {/* Tombol Ikut Kerjakan */}
-                                      {!isAssignedToMe && !isSubtaskCompletedGlobally(st) && (
-                                        <button 
-                                          onClick={() => assignSubtask(activeTaskDetail.id, st.id, currentUser.id)}
-                                          className="text-[10px] uppercase tracking-wider bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold transition-colors shadow-sm"
-                                        >
-                                          Ikut
-                                        </button>
+                                      {/* Tombol Ikut / Batal Ikut Kerjakan */}
+                                      {!isSubtaskCompletedGlobally(st) && (
+                                        isAssignedToMe ? (
+                                          <button 
+                                            onClick={() => removeAssignee(activeTaskDetail.id, st.id, currentUser.id)}
+                                            className="text-[10px] uppercase tracking-wider bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 px-2.5 py-1.5 rounded-lg font-bold transition-colors shadow-sm"
+                                            title="Batal Ikut Tugas Ini"
+                                          >
+                                            Batal
+                                          </button>
+                                        ) : (
+                                          <button 
+                                            onClick={() => assignSubtask(activeTaskDetail.id, st.id, currentUser.id)}
+                                            className="text-[10px] uppercase tracking-wider bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold transition-colors shadow-sm"
+                                          >
+                                            Ikut
+                                          </button>
+                                        )
                                       )}
 
                                       {/* Tombol Delegasi (Ketua) */}
