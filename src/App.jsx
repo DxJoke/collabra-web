@@ -342,6 +342,18 @@ export default function App() {
     }
   };
 
+  const handleDeleteProof = async (taskId, subtaskId) => {
+    if (!window.confirm("Yakin ingin menghapus foto bukti ini?")) return;
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, proofImage: null } : st);
+      await updateDoc(doc(db, 'tasks', taskId), { subtasks: newSubtasks });
+      showToast('Foto bukti berhasil dihapus!');
+    } catch(err) {
+      showToast('Gagal menghapus foto.', 'error');
+    }
+  };
+
   // Create Form Handlers
   const handleAddSubtaskInput = () => setNewTask({ ...newTask, subtasks: [...newTask.subtasks, { id: Date.now().toString(), title: '' }] });
   const handleSubtaskInputChange = (id, value) => setNewTask({ ...newTask, subtasks: newTask.subtasks.map(st => st.id === id ? { ...st, title: value } : st) });
@@ -944,9 +956,16 @@ export default function App() {
                                       {/* Tombol Upload Bukti Foto */}
                                       {canToggle && (
                                         st.proofImage ? (
-                                          <button onClick={(e) => { e.stopPropagation(); setShowPhotoModal(st.proofImage); }} className="p-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition-colors shadow-sm" title="Lihat Bukti Foto">
-                                            <ImageIcon size={18}/>
-                                          </button>
+                                          <div className="flex items-center gap-1">
+                                            <button onClick={(e) => { e.stopPropagation(); setShowPhotoModal(st.proofImage); }} className="p-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition-colors shadow-sm" title="Lihat Bukti Foto">
+                                              <ImageIcon size={18}/>
+                                            </button>
+                                            {!st.isCompleted && (
+                                              <button onClick={(e) => { e.stopPropagation(); handleDeleteProof(activeTaskDetail.id, st.id); }} className="p-1.5 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors shadow-sm" title="Hapus Bukti Foto">
+                                                <Trash2 size={18}/>
+                                              </button>
+                                            )}
+                                          </div>
                                         ) : (
                                           <label className="cursor-pointer p-1.5 rounded-lg bg-white border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-all shadow-sm relative group/upload" title="Wajib Unggah Bukti Foto">
                                             {isUploadingPhoto === st.id ? (
@@ -1263,9 +1282,22 @@ export default function App() {
               }}
             />
             <p className="text-white/70 text-sm mt-4 font-medium flex items-center gap-2"><ImageIcon size={16}/> Bukti Pengerjaan Tugas</p>
-            <a href={showPhotoModal} target="_blank" rel="noreferrer" className="text-white/40 text-xs mt-2 underline hover:text-white transition-colors text-center break-all max-w-full px-4">
-              Buka gambar di tab baru: {showPhotoModal}
-            </a>
+            {showPhotoModal && !showPhotoModal.startsWith('data:') && (
+              <a href={showPhotoModal} target="_blank" rel="noreferrer" className="text-white/40 text-xs mt-2 underline hover:text-white transition-colors text-center break-all max-w-full px-4">
+                Buka gambar di tab baru: {showPhotoModal}
+              </a>
+            )}
+            {showPhotoModal && showPhotoModal.startsWith('data:') && (
+              <button 
+                onClick={() => {
+                  const w = window.open();
+                  w.document.write(`<img src="${showPhotoModal}" style="max-width:100%;"/>`);
+                }}
+                className="text-white/40 text-xs mt-2 underline hover:text-white transition-colors text-center"
+              >
+                Buka gambar layar penuh
+              </button>
+            )}
           </div>
         </div>
       )}
