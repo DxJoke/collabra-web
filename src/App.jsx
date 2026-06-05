@@ -1086,9 +1086,19 @@ export default function App() {
                       {eligibleAssignees.map(uId => {
                         const u = getUserById(uId);
                         if (!u) return null;
-                        const totalAssigned = activeTaskDetail.subtasks.filter(st => st.assignees && st.assignees.includes(uId)).length;
-                        const totalCompleted = activeTaskDetail.subtasks.filter(st => st.isCompleted && st.assignees && st.assignees.includes(uId)).length;
-                        const userProgress = totalAssigned === 0 ? 0 : Math.round((totalCompleted / totalAssigned) * 100);
+                        const totalSubtasks = activeTaskDetail.subtasks.length;
+                        let userPoints = 0;
+                        
+                        activeTaskDetail.subtasks.forEach(st => {
+                          if (st.isCompleted && st.assignees && st.assignees.includes(uId)) {
+                            userPoints += (1 / st.assignees.length);
+                          }
+                        });
+
+                        const userProgress = totalSubtasks === 0 ? 0 : Math.round((userPoints / totalSubtasks) * 100);
+                        
+                        const tasksInvolvedCompleted = activeTaskDetail.subtasks.filter(st => st.isCompleted && st.assignees && st.assignees.includes(uId)).length;
+                        const tasksInvolvedTotal = activeTaskDetail.subtasks.filter(st => st.assignees && st.assignees.includes(uId)).length;
                         
                         return (
                           <div key={uId} className="flex items-center gap-5 p-4 rounded-2xl bg-gray-50 border border-gray-100 hover:border-indigo-100 hover:bg-indigo-50/30 transition-colors">
@@ -1097,9 +1107,9 @@ export default function App() {
                               <div className="flex justify-between items-end mb-2">
                                 <div>
                                   <p className="font-bold text-gray-800 text-base truncate">{u.name}</p>
-                                  <p className="text-xs text-gray-500 font-medium mt-0.5">Berhasil menyelesaikan <span className="font-bold text-gray-700">{totalCompleted}</span> dari <span className="font-bold text-gray-700">{totalAssigned}</span> tugas</p>
+                                  <p className="text-xs text-gray-500 font-medium mt-0.5">Telah menyelesaikan <span className="font-bold text-gray-700">{tasksInvolvedCompleted}</span> bagian (<span className="font-bold text-gray-700">{userProgress}%</span> kontribusi proyek)</p>
                                 </div>
-                                <span className={`text-lg font-black ${userProgress === 100 ? 'text-emerald-500' : 'text-indigo-600'}`}>{userProgress}%</span>
+                                <span className={`text-lg font-black ${userProgress > 0 ? 'text-indigo-600' : 'text-gray-400'}`}>{userProgress}%</span>
                               </div>
                               <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
                                 <div className={`h-2.5 rounded-full transition-all duration-1000 ${userProgress === 100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-indigo-500 to-purple-500'}`} style={{ width: `${userProgress}%` }}></div>
