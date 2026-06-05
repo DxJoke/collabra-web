@@ -296,14 +296,23 @@ export default function App() {
     if (!file) return;
     setIsUploadingPhoto(subtaskId);
     try {
-      const storageRef = ref(storage, `proofs/${taskId}_${subtaskId}_${Date.now()}_${file.name}`);
+      const formData = new FormData();
+      formData.append('image', file);
       
-      const uploadPromise = uploadBytes(storageRef, file);
+      const imgbbPromise = fetch('https://api.imgbb.com/1/upload?key=1b3aacf078c7844113d8a687fc18c856', {
+        method: 'POST',
+        body: formData
+      }).then(res => res.json());
+
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 15000));
       
-      await Promise.race([uploadPromise, timeoutPromise]);
+      const response = await Promise.race([imgbbPromise, timeoutPromise]);
       
-      const downloadURL = await getDownloadURL(storageRef);
+      if (!response || !response.success) {
+        throw new Error('IMGBB_ERROR');
+      }
+
+      const downloadURL = response.data.url;
       const task = tasks.find(t => t.id === taskId);
       const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, proofImage: downloadURL } : st);
       
@@ -314,9 +323,9 @@ export default function App() {
       showToast('Foto bukti berhasil diunggah!');
     } catch(err) {
       if (err.message === 'TIMEOUT') {
-        showToast('Koneksi lambat (Timeout). Pastikan Rules Firebase Storage sudah Test Mode!', 'error');
+        showToast('Koneksi lambat (Timeout). Silakan coba lagi!', 'error');
       } else {
-        showToast('Gagal mengunggah foto! Pastikan aturan Firebase mengizinkan read/write.', 'error');
+        showToast('Gagal mengunggah foto ke ImgBB!', 'error');
       }
       setIsUploadingPhoto(null);
     }
