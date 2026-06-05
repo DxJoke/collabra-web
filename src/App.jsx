@@ -973,20 +973,22 @@ export default function App() {
                                   </td>
                                   <td className="px-4 py-4 text-right">
                                     <div className="flex items-center justify-end gap-2">
-                                      {/* Tombol Upload Bukti Foto */}
-                                      {canToggle && (
-                                        st.proofImage ? (
+                                      {/* Tombol Lihat Bukti Foto (Bisa dilihat semua orang) */}
+                                      {st.proofImage && (
                                           <div className="flex items-center gap-1">
                                             <button onClick={(e) => { e.stopPropagation(); setShowPhotoModal(st.proofImage); }} className="p-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition-colors shadow-sm" title="Lihat Bukti Foto">
                                               <ImageIcon size={18}/>
                                             </button>
-                                            {!isSubtaskCompletedGlobally(st) && (
+                                            {isAssignedToMe && !isSubtaskCompletedGlobally(st) && (
                                               <button onClick={(e) => { e.stopPropagation(); handleDeleteProof(activeTaskDetail.id, st.id); }} className="p-1.5 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors shadow-sm" title="Hapus Bukti Foto">
                                                 <Trash2 size={18}/>
                                               </button>
                                             )}
                                           </div>
-                                        ) : (
+                                      )}
+
+                                      {/* Tombol Upload (HANYA Assignee) */}
+                                      {!st.proofImage && isAssignedToMe && (
                                           <label className="cursor-pointer p-1.5 rounded-lg bg-white border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-all shadow-sm relative group/upload" title="Wajib Unggah Bukti Foto">
                                             {isUploadingPhoto === st.id ? (
                                               <div className="w-[18px] h-[18px] border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
@@ -1001,15 +1003,14 @@ export default function App() {
                                             )}
                                             <input type="file" accept="image/*" className="hidden" onChange={(e) => handleUploadProof(activeTaskDetail.id, st.id, e.target.files[0])}/>
                                           </label>
-                                        )
                                       )}
 
-                                      {/* Tombol Tandai Selesai */}
+                                      {/* Tombol Tandai Selesai (HANYA Assignee) */}
                                       <button 
-                                        onClick={() => canToggle && toggleSubtaskStatus(activeTaskDetail.id, st.id)}
-                                        disabled={!canToggle}
-                                        className={`p-1.5 rounded-lg border transition-all ${isSubtaskCompletedByUser(st, currentUser.id) ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : (canToggle ? 'bg-white text-gray-400 hover:text-emerald-500 hover:border-emerald-200 shadow-sm' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed')}`}
-                                        title={isSubtaskCompletedByUser(st, currentUser.id) ? "Batal Selesai" : "Tandai Selesai"}
+                                        onClick={() => isAssignedToMe && toggleSubtaskStatus(activeTaskDetail.id, st.id)}
+                                        disabled={!isAssignedToMe}
+                                        className={`p-1.5 rounded-lg border transition-all ${isSubtaskCompletedByUser(st, currentUser.id) ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : (isAssignedToMe ? 'bg-white text-gray-400 hover:text-emerald-500 hover:border-emerald-200 shadow-sm' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed')}`}
+                                        title={isSubtaskCompletedByUser(st, currentUser.id) ? "Batal Selesai" : (isAssignedToMe ? "Tandai Selesai" : "Anda harus ikut kerjakan tugas ini")}
                                       >
                                         <CheckCircle2 size={18} />
                                       </button>
