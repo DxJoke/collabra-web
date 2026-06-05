@@ -9,7 +9,7 @@ import {
 import confetti from 'canvas-confetti';
 import { db, storage } from './firebase';
 import { collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 export default function App() {
   // --- STATE MANAJEMEN ---
@@ -297,25 +297,27 @@ export default function App() {
     setIsUploadingPhoto(subtaskId);
     try {
       const storageRef = ref(storage, `proofs/${taskId}_${subtaskId}_${Date.now()}_${file.name}`);
-      const uploadTask = uploadBytesResumable(storageRef, file);
       
-      uploadTask.on('state_changed', 
-        () => {}, 
-        (error) => {
-          showToast('Gagal mengunggah foto!', 'error');
-          setIsUploadingPhoto(null);
-        }, 
-        async () => {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          const task = tasks.find(t => t.id === taskId);
-          const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, proofImage: downloadURL } : st);
-          await updateDoc(doc(db, 'tasks', taskId), { subtasks: newSubtasks });
-          setIsUploadingPhoto(null);
-          showToast('Foto bukti berhasil diunggah!');
-        }
-      );
+      const uploadPromise = uploadBytes(storageRef, file);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 15000));
+      
+      await Promise.race([uploadPromise, timeoutPromise]);
+      
+      const downloadURL = await getDownloadURL(storageRef);
+      const task = tasks.find(t => t.id === taskId);
+      const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, proofImage: downloadURL } : st);
+      
+      const updatePromise = updateDoc(doc(db, 'tasks', taskId), { subtasks: newSubtasks });
+      await Promise.race([updatePromise, timeoutPromise]);
+
+      setIsUploadingPhoto(null);
+      showToast('Foto bukti berhasil diunggah!');
     } catch(err) {
-      showToast('Gagal mengunggah foto!', 'error');
+      if (err.message === 'TIMEOUT') {
+        showToast('Koneksi lambat (Timeout). Pastikan Rules Firebase Storage sudah Test Mode!', 'error');
+      } else {
+        showToast('Gagal mengunggah foto! Pastikan aturan Firebase mengizinkan read/write.', 'error');
+      }
       setIsUploadingPhoto(null);
     }
   };
