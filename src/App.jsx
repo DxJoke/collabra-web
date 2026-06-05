@@ -93,9 +93,20 @@ export default function App() {
   // Helpers
   const getUserById = (id) => users.find(u => u.id === id);
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : '?';
+
+  const isSubtaskCompletedGlobally = (st) => {
+    if (st.isCompleted) return true; // Legacy support
+    if (!st.assignees || st.assignees.length === 0) return false;
+    return st.assignees.every(id => st.completedBy && st.completedBy.includes(id));
+  };
+
+  const isSubtaskCompletedByUser = (st, userId) => {
+    if (st.isCompleted) return true; // Legacy support
+    return st.completedBy && st.completedBy.includes(userId);
+  };
   const calculateProgress = (subtasks) => {
     if (!subtasks || subtasks.length === 0) return 0;
-    const completed = subtasks.filter(st => st.isCompleted).length;
+    const completed = subtasks.filter(st => isSubtaskCompletedGlobally(st)).length;
     return Math.round((completed / subtasks.length) * 100);
   };
 
@@ -229,15 +240,24 @@ export default function App() {
     if(!task) return;
     
     const subtask = task.subtasks.find(st => st.id === subtaskId);
-    if (!subtask.isCompleted && !subtask.proofImage) {
+    const userCompleted = isSubtaskCompletedByUser(subtask, currentUser.id);
+
+    if (!userCompleted && !subtask.proofImage) {
       return showToast('Wajib mengunggah foto bukti terlebih dahulu!', 'error');
     }
 
-    const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, isCompleted: !st.isCompleted } : st);
+    let newCompletedBy = subtask.completedBy || [];
+    if (userCompleted) {
+      newCompletedBy = newCompletedBy.filter(id => id !== currentUser.id);
+    } else {
+      newCompletedBy = [...newCompletedBy, currentUser.id];
+    }
+
+    const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, isCompleted: false, completedBy: newCompletedBy } : st);
     
     // Cek apakah baru saja mencapai 100%
-    const wasCompleted = task.subtasks.filter(st => st.isCompleted).length === task.subtasks.length;
-    const nowCompleted = newSubtasks.filter(st => st.isCompleted).length === newSubtasks.length;
+    const wasCompleted = task.subtasks.filter(st => isSubtaskCompletedGlobally(st)).length === task.subtasks.length;
+    const nowCompleted = newSubtasks.filter(st => isSubtaskCompletedGlobally(st)).length === newSubtasks.length;
     
     if (!wasCompleted && nowCompleted) {
       confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 }, colors: ['#6366f1', '#a855f7', '#ec4899', '#22c55e'] });
@@ -735,7 +755,7 @@ export default function App() {
                         <div className="space-y-2">
                           {task.subtasks?.slice(0, 3).map(st => (
                             <div key={st.id} className="flex items-center gap-2 text-sm text-gray-500 truncate">
-                              {st.isCompleted ? <CheckCircle2 size={14} className="text-emerald-500 shrink-0"/> : <Circle size={14} className="shrink-0"/>}
+                              {isSubtaskCompletedGlobally(st) ? <CheckCircle2 size={14} className="text-emerald-500 shrink-0"/> : <Circle size={14} className="shrink-0"/>}
                               <span className="truncate">{st.title}</span>
                             </div>
                           ))}
@@ -903,10 +923,10 @@ export default function App() {
                               const canToggle = isAssignedToMe || isTaskCreator; 
 
                               return (
-                                <tr key={st.id} className={`hover:bg-gray-50/50 transition-colors ${st.isCompleted ? 'bg-gray-50/30' : 'bg-white'}`}>
+                                <tr key={st.id} className={`hover:bg-gray-50/50 transition-colors ${isSubtaskCompletedGlobally(st) ? 'bg-gray-50/30' : 'bg-white'}`}>
                                   <td className="px-4 py-4 text-sm text-gray-400 font-medium text-center">{idx + 1}</td>
                                   <td className="px-4 py-4">
-                                    <p className={`text-sm font-semibold ${st.isCompleted ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                                    <p className={`text-sm font-semibold ${isSubtaskCompletedGlobally(st) ? 'line-through text-gray-400' : 'text-gray-800'}`}>
                                       {st.title}
                                     </p>
                                   </td>
@@ -921,7 +941,7 @@ export default function App() {
                                                 {getInitials(u.name)}
                                               </div>
                                               <span className="text-xs font-medium text-gray-700 hidden sm:inline">{u.name.split(' ')[0]}</span>
-                                              {(isTaskCreator || uId === currentUser.id) && !st.isCompleted && (
+                                              {(isTaskCreator || uId === currentUser.id) && !isSubtaskCompletedGlobally(st) && (
                                                   <button 
                                                     onClick={(e) => { e.stopPropagation(); removeAssignee(activeTaskDetail.id, st.id, uId); }}
                                                     className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity z-10 shadow-sm"
@@ -941,7 +961,7 @@ export default function App() {
                                     )}
                                   </td>
                                   <td className="px-4 py-4 text-center">
-                                    {st.isCompleted ? (
+                                    {isSubtaskCompletedGlobally(st) ? (
                                       <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
                                         <CheckCircle2 size={12}/> Selesai
                                       </span>
@@ -960,7 +980,7 @@ export default function App() {
                                             <button onClick={(e) => { e.stopPropagation(); setShowPhotoModal(st.proofImage); }} className="p-1.5 rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition-colors shadow-sm" title="Lihat Bukti Foto">
                                               <ImageIcon size={18}/>
                                             </button>
-                                            {!st.isCompleted && (
+                                            {!isSubtaskCompletedGlobally(st) && (
                                               <button onClick={(e) => { e.stopPropagation(); handleDeleteProof(activeTaskDetail.id, st.id); }} className="p-1.5 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 transition-colors shadow-sm" title="Hapus Bukti Foto">
                                                 <Trash2 size={18}/>
                                               </button>
@@ -988,14 +1008,14 @@ export default function App() {
                                       <button 
                                         onClick={() => canToggle && toggleSubtaskStatus(activeTaskDetail.id, st.id)}
                                         disabled={!canToggle}
-                                        className={`p-1.5 rounded-lg border transition-all ${st.isCompleted ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : (canToggle ? 'bg-white text-gray-400 hover:text-emerald-500 hover:border-emerald-200 shadow-sm' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed')}`}
-                                        title={st.isCompleted ? "Batal Selesai" : "Tandai Selesai"}
+                                        className={`p-1.5 rounded-lg border transition-all ${isSubtaskCompletedByUser(st, currentUser.id) ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : (canToggle ? 'bg-white text-gray-400 hover:text-emerald-500 hover:border-emerald-200 shadow-sm' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed')}`}
+                                        title={isSubtaskCompletedByUser(st, currentUser.id) ? "Batal Selesai" : "Tandai Selesai"}
                                       >
                                         <CheckCircle2 size={18} />
                                       </button>
                                       
                                       {/* Tombol Ikut Kerjakan */}
-                                      {!isAssignedToMe && !st.isCompleted && (
+                                      {!isAssignedToMe && !isSubtaskCompletedGlobally(st) && (
                                         <button 
                                           onClick={() => assignSubtask(activeTaskDetail.id, st.id, currentUser.id)}
                                           className="text-[10px] uppercase tracking-wider bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold transition-colors shadow-sm"
@@ -1005,7 +1025,7 @@ export default function App() {
                                       )}
 
                                       {/* Tombol Delegasi (Ketua) */}
-                                      {isTaskCreator && !st.isCompleted && (
+                                      {isTaskCreator && !isSubtaskCompletedGlobally(st) && (
                                         <div className="relative">
                                           <button 
                                             onClick={(e) => {
@@ -1090,14 +1110,14 @@ export default function App() {
                         let userPoints = 0;
                         
                         activeTaskDetail.subtasks.forEach(st => {
-                          if (st.isCompleted && st.assignees && st.assignees.includes(uId)) {
+                          if (isSubtaskCompletedByUser(st, uId) && st.assignees && st.assignees.includes(uId)) {
                             userPoints += (1 / st.assignees.length);
                           }
                         });
 
                         const userProgress = totalSubtasks === 0 ? 0 : Math.round((userPoints / totalSubtasks) * 100);
                         
-                        const tasksInvolvedCompleted = activeTaskDetail.subtasks.filter(st => st.isCompleted && st.assignees && st.assignees.includes(uId)).length;
+                        const tasksInvolvedCompleted = activeTaskDetail.subtasks.filter(st => isSubtaskCompletedByUser(st, uId) && st.assignees && st.assignees.includes(uId)).length;
                         const tasksInvolvedTotal = activeTaskDetail.subtasks.filter(st => st.assignees && st.assignees.includes(uId)).length;
                         
                         return (
