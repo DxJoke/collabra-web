@@ -296,26 +296,37 @@ export default function App() {
     if (!file) return;
     setIsUploadingPhoto(subtaskId);
     try {
-      const formData = new FormData();
-      formData.append('image', file);
-      
-      const imgbbPromise = fetch('https://api.imgbb.com/1/upload?key=1b3aacf078c7844113d8a687fc18c856', {
-        method: 'POST',
-        body: formData
-      }).then(res => res.json());
+      // Kompresi gambar di sisi klien untuk menghindari blokir ISP dan API
+      const compressedBase64 = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (e) => {
+          const img = new Image();
+          img.src = e.target.result;
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let { width, height } = img;
+            const MAX_SIZE = 800; // Maksimal resolusi 800px agar ringan (di bawah 100KB)
+            if (width > height && width > MAX_SIZE) {
+              height *= MAX_SIZE / width;
+              width = MAX_SIZE;
+            } else if (height > MAX_SIZE) {
+              width *= MAX_SIZE / height;
+              height = MAX_SIZE;
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.6)); // Kualitas 60%
+          };
+        };
+      });
 
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 15000));
-      
-      const response = await Promise.race([imgbbPromise, timeoutPromise]);
-      
-      if (!response || !response.success) {
-        throw new Error('IMGBB_ERROR');
-      }
-
-      const downloadURL = response.data.url;
       const task = tasks.find(t => t.id === taskId);
-      const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, proofImage: downloadURL } : st);
+      const newSubtasks = task.subtasks.map(st => st.id === subtaskId ? { ...st, proofImage: compressedBase64 } : st);
       
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 10000));
       const updatePromise = updateDoc(doc(db, 'tasks', taskId), { subtasks: newSubtasks });
       await Promise.race([updatePromise, timeoutPromise]);
 
@@ -325,7 +336,7 @@ export default function App() {
       if (err.message === 'TIMEOUT') {
         showToast('Koneksi lambat (Timeout). Silakan coba lagi!', 'error');
       } else {
-        showToast('Gagal mengunggah foto ke ImgBB!', 'error');
+        showToast('Gagal memproses gambar.', 'error');
       }
       setIsUploadingPhoto(null);
     }
